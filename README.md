@@ -7,7 +7,7 @@
 
 ## Install
 1. Put app "queryset_cmd" to root of your project.
-2. Add "queryset_cmd.apps.QuerysetCmd" to you settings.py.
+2. Add "queryset_cmd.apps.QuerysetCmd" to your settings.py.
 
 ## Usage
 ```shell
