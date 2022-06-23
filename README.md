@@ -37,4 +37,5 @@ python manage.py auth.User --filter id__in=1,3,5
 python manage.py auth.User --filter last_login__range=2022-05-01T00:00:00,2022-05-31T23:59:59
 python namage.py auth.User --filter last_login__range=2022-05-01,2022-06-01
 ```
-> You can use --v to see verbose output
+> Tips: <br>
+> Use --v to see verbose output.
