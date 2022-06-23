@@ -6,8 +6,8 @@
 - Django 2.0 +
 
 ## Install
-1. Put app "queryset_cmd" to root of your project.
-2. Add "queryset_cmd.apps.QuerysetCmd" to your settings.py.
+1. Put the app "queryset_cmd" directory into root of your project.
+2. Add "queryset_cmd.apps.QuerysetCmd" to INSTALLED_APPS of settings.py.
 
 ## Usage
 ```shell
