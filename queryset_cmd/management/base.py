@@ -4,9 +4,12 @@ import warnings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
 
-from .utils import text
 from .utils.datetime import to_aware_datetime
-from .utils.text import query_str2dict
+from .utils.text import (
+    comma_separated_str2list,
+    str2iter, is_list, str2bool, str2int, str2float,
+    query_str2dict
+)
 
 
 class QuerySetCommand(BaseCommand):
@@ -60,10 +63,10 @@ class QuerySetCommand(BaseCommand):
             return None
         if iterable:
             # 转为可迭代对象
-            if text.is_list(value):
-                value = text.str2iter(value)
+            if is_list(value):
+                value = str2iter(value)
             else:
-                value = text.comma_separated_str2list(value)
+                value = comma_separated_str2list(value)
         try:
             if isinstance(field, models.DateTimeField) or isinstance(refer_value, datetime.datetime):
                 if iterable:
@@ -74,17 +77,17 @@ class QuerySetCommand(BaseCommand):
                 if iterable:
                     # bool filed not support iterable value
                     raise ValueError(value)
-                value = text.str2bool(value)
+                value = str2bool(value)
             elif isinstance(field, models.IntegerField) or isinstance(refer_value, int):
                 if iterable:
                     value = list(map(lambda x: int(x), value))
                 else:
-                    value = text.str2int(value)
+                    value = str2int(value)
             elif isinstance(field, models.FloatField) or isinstance(refer_value, float):
                 if iterable:
                     value = list(map(lambda x: float(x), value))
                 else:
-                    value = text.str2float(value)
+                    value = str2float(value)
             else:
                 # str, bson ...
                 pass
@@ -125,7 +128,7 @@ class QuerySetCommand(BaseCommand):
                                 queries[ff._range] = fv
                             elif fc == ff.isnull:
                                 try:
-                                    fv = text.str2bool(fv)
+                                    fv = str2bool(fv)
                                 except (TypeError, ValueError):
                                     raise CommandError('Condition isnull accepts only bool type.')
                                 queries[ff._isnull] = fv
@@ -164,7 +167,7 @@ class QuerySetCommand(BaseCommand):
 
             if order_by:
                 try:
-                    order_by = text.str2iter(order_by)
+                    order_by = comma_separated_str2list(order_by)
                 except TypeError:
                     pass
                 if isinstance(order_by, str):

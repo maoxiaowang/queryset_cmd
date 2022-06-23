@@ -19,6 +19,9 @@ python manage.py list --help
 # List all users by default ordering
 python manage.py auth.User
 
+# List sliced (50) users with given orders
+python manage.py auth.User --order-by=-id,username --limit 50
+
 # List users whose name contains "Bird" and their ID are bigger than 10
 python manage.py auth.User --filter name__contains=Bird,id__gt=10
 
