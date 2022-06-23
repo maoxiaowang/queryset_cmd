@@ -1,5 +1,5 @@
 # QuerySet Command
-> Query database by ORM style in terminal. <br>
+> Query database in terminal with ORM style. <br>
 > Support common querying, except comprehensive querying (Q, F, aggregate, ...).
 
 ## Prerequisite
