@@ -85,7 +85,7 @@ Author object (3)
 Count: 3
 ```
 > Tips: <br>
-> Use **--all** to see full output. For default, only first 20 objects will be displayed. <br>
+> Use **--all** to see full output. By default, only first 20 objects will be displayed. <br>
 > Use **--v** to see verbose output. <br>
 
 ```shell
