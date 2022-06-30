@@ -1,6 +1,7 @@
+import copy
 import datetime
-import warnings
 
+from django.core.exceptions import FieldError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
 
@@ -14,36 +15,33 @@ from .utils.text import (
 
 class QuerySetCommand(BaseCommand):
     class FilterFormat(object):
+        isin = 'in'
+        range = 'range'
+        exact = 'exact'
+        iexact = 'iexact'
+        isnull = 'isnull'
+        contains = 'contains'
+        icontains = 'icontains'
+        gt = 'gt'
+        gte = 'gte'
+        lt = 'lt'
+        lte = 'lte'
+
+        builtin_conditions = (
+            isin, range, exact, iexact, isnull,
+            contains, icontains, gt, gte, lt, lte
+        )
 
         exc = 'exclude__'
 
         def __init__(self, field_name):
             self.field_name = field_name
-            self.isin = 'in'
-            self.range = 'range'
-            self.exact = 'exact'
-            self.iexact = 'iexact'
-            self.isnull = 'isnull'
-            self.contains = 'contains'
-            self.icontains = 'icontains'
-            self.gt = 'gt'
-            self.gte = 'gte'
-            self.lt = 'lt'
-            self.lte = 'lte'
 
-        @property
-        def filter_names(self):
-            return (
-                self.isin, self.range, self.exact, self.iexact, self.isnull, self.contains,
-                self.icontains, self.gt, self.gte, self.lt, self.lte
-            )
-
-        def __getattr__(self, item):
-            items = item.split('_')
-            if item.startswith('_') and len(items) == 2:
-                name = self.__getattribute__(''.join(items[1:]))
-                return f'{self.field_name}__{name}'
-            return super().__getattribute__(item)
+        def setup(self, fc):
+            """
+            Setup final condition clauses
+            """
+            return '__'.join([self.field_name, fc])
 
         def exclude(self, cond):
             return self.exc + cond
@@ -67,35 +65,108 @@ class QuerySetCommand(BaseCommand):
                 value = str2iter(value)
             else:
                 value = comma_separated_str2list(value)
-        try:
-            if isinstance(field, models.DateTimeField) or isinstance(refer_value, datetime.datetime):
-                if iterable:
-                    value = list(map(lambda x: to_aware_datetime(x), value))
-                else:
-                    value = to_aware_datetime(value)
-            elif isinstance(field, models.BooleanField) or isinstance(refer_value, bool):
-                if iterable:
-                    # bool filed not support iterable value
-                    raise ValueError(value)
-                value = str2bool(value)
-            elif isinstance(field, models.IntegerField) or isinstance(refer_value, int):
-                if iterable:
-                    value = list(map(lambda x: int(x), value))
-                else:
-                    value = str2int(value)
-            elif isinstance(field, models.FloatField) or isinstance(refer_value, float):
-                if iterable:
-                    value = list(map(lambda x: float(x), value))
-                else:
-                    value = str2float(value)
-            else:
-                # str, bson ...
-                pass
 
-        except Exception as e:
-            raise CommandError(e)
+        if isinstance(field, models.DateTimeField) or isinstance(refer_value, datetime.datetime):
+            if iterable:
+                value = list(map(lambda x: to_aware_datetime(x), value))
+            else:
+                value = to_aware_datetime(value)
+        elif isinstance(field, models.BooleanField) or isinstance(refer_value, bool):
+            if iterable:
+                # bool filed not support iterable value
+                raise ValueError(value)
+            value = str2bool(value)
+        elif isinstance(field, models.IntegerField) or isinstance(refer_value, int):
+            if iterable:
+                value = list(map(lambda x: int(x), value))
+            else:
+                value = str2int(value)
+        elif isinstance(field, models.FloatField) or isinstance(refer_value, float):
+            if iterable:
+                value = list(map(lambda x: float(x), value))
+            else:
+                value = str2float(value)
+        else:
+            # str, bson ...
+            pass
 
         return value
+
+    def _setup_query(self, queryset, kwargs: dict) -> dict:
+        assert queryset
+        instance = queryset[0]
+        queries = dict()
+
+        for fnc, fv in kwargs.items():
+            # makeup the field name and condition
+            *fns, fc = fnc.split('__')
+            if not fc:
+                # e.g. name, mobile_phone, user(FK)
+                fc = 'exact'
+            else:
+                if fc not in self.FilterFormat.builtin_conditions:
+                    # e.g. user__username, user__id
+                    fns.append(fc)
+                    fc = 'exact'
+
+            def _get_last_field(_meta=None, _fns=None):
+                # find last field according to field name list
+                if not _fns:
+                    _fns = copy.copy(fns)
+                if not _meta:
+                    _meta = instance._meta
+
+                _fns.reverse()
+                _fn = _fns[-1]
+                _fns.pop()
+
+                _field = _meta.get_field(_fn)
+
+                if hasattr(_field, '_meta'):
+                    return _get_last_field(_field._meta, _fns)
+
+                return _field
+
+            last_field = _get_last_field()
+            fields = last_field.related_model._meta.concrete_fields
+
+            ffn = '__'.join(fns)  # full field name
+            fn = fns[-1]  # field name
+            ff = self.FilterFormat(ffn)
+
+            for i, field in enumerate(fields):
+                if fn in (field.attname, field.name):
+                    hit_field = True
+                    if fc == ff.range:
+                        fv = self._clean_query_value(fv, field, iterable=True)
+                        if len(fv) != 2:
+                            raise CommandError('Condition range requires exactly two values.')
+                    elif fc == ff.isnull:
+                        try:
+                            fv = str2bool(fv)
+                        except (TypeError, ValueError):
+                            raise CommandError('Condition isnull accepts only bool type.')
+                    elif fc == ff.isin:
+                        fv = self._clean_query_value(fv, field, iterable=True)
+                    else:
+                        common_cond = (
+                            ff.exact, ff.iexact, ff.contains, ff.icontains,
+                            ff.gt, ff.gte, ff.lt, ff.lte)
+                        cond_hit = False
+                        for item in common_cond:
+                            if fc == item:
+                                fv = self._clean_query_value(fv, field)
+                                cond_hit = True
+                                break
+                        if not cond_hit:
+                            hit_field = False
+
+                        if hit_field:
+                            break
+
+            queries[ff.setup(fc)] = fv
+
+        return queries
 
     def filter_queryset(self, queryset, order_by: list = None, limit: int = None, strict=False):
         """
@@ -104,70 +175,16 @@ class QuerySetCommand(BaseCommand):
         """
         # filtering except in case of passing parameter all=true
         if queryset:
-            fields = queryset[0]._meta.concrete_fields
-
-            def setup_query(kwargs: dict) -> dict:
-                queries = dict()
-                for fnc, fv in kwargs.items():
-                    try:
-                        fn, fc = fnc.split('__')
-                    except ValueError:
-                        fn = fnc
-                        fc = 'exact'
-
-                    ff = self.FilterFormat(fn)
-
-                    hit_field = False
-                    for i, field in enumerate(fields):
-                        if fn == field.attname:
-                            hit_field = True
-                            if fc == ff.range:
-                                fv = self._clean_query_value(fv, field, iterable=True)
-                                if len(fv) != 2:
-                                    raise CommandError('Condition range requires exactly two values.')
-                                queries[ff._range] = fv
-                            elif fc == ff.isnull:
-                                try:
-                                    fv = str2bool(fv)
-                                except (TypeError, ValueError):
-                                    raise CommandError('Condition isnull accepts only bool type.')
-                                queries[ff._isnull] = fv
-                            elif fc == ff.isin:
-                                queries[ff._isin] = self._clean_query_value(fv, field, iterable=True)
-                            else:
-                                common_cond = (
-                                    ff.exact, ff.iexact, ff.contains, ff.icontains,
-                                    ff.gt, ff.gte, ff.lt, ff.lte)
-                                cond_hit = False
-                                for item in common_cond:
-                                    if fc == item:
-                                        queries[getattr(ff, f'_{item}')] = self._clean_query_value(fv, field)
-                                        cond_hit = True
-                                        break
-                                if not cond_hit:
-                                    cond_message = 'Not supported query with condition "%s".' % fc
-                                    if strict:
-                                        raise CommandError(cond_message)
-                                    else:
-                                        warnings.warn(cond_message)
-                    if not hit_field:
-                        field_message = f'Querying field "{fn}" is not a valid field.'
-                        if strict:
-                            raise CommandError(field_message)
-                        else:
-                            warnings.warn(field_message)
-
-                return queries
-
-            filter_conditions = setup_query(self.filter_kwargs)
-            exclude_conditions = setup_query(self.exclude_kwargs)
-
-            # print(filter_conditions, exclude_conditions)
-            queryset = queryset.exclude(**exclude_conditions).filter(**filter_conditions)
+            try:
+                queryset = queryset.exclude(
+                    **self._setup_query(queryset, self.exclude_kwargs)).filter(
+                    **self._setup_query(queryset, self.filter_kwargs))
+            except FieldError as e:
+                raise CommandError(e)
 
             if order_by:
                 try:
-                    order_by = comma_separated_str2list(order_by)
+                    order_by = str2iter(order_by)
                 except TypeError:
                     pass
                 if isinstance(order_by, str):
