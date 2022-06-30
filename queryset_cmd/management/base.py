@@ -168,7 +168,7 @@ class QuerySetCommand(BaseCommand):
 
         return queries
 
-    def filter_queryset(self, queryset, order_by: list = None, limit: int = None, strict=False):
+    def filter_queryset(self, queryset, order_by: list = None, limit: int = None):
         """
         Filter queryset by layer, then by filter parameters and
         order queryset if necessary
@@ -199,9 +199,6 @@ class QuerySetCommand(BaseCommand):
         return queryset
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--strict', action='store_true', default=False
-        )
         parser.add_argument(
             '--order-by', type=str, default=None,
             help='Queryset order argument'

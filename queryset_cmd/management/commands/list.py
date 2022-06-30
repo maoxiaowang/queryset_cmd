@@ -1,7 +1,10 @@
+import json
+
 from django.apps import apps
 from django.forms import model_to_dict
 
 from ..base import QuerySetCommand
+from ..utils.json import JsonEncoder
 
 
 class Command(QuerySetCommand):
@@ -21,31 +24,29 @@ class Command(QuerySetCommand):
         super().add_arguments(parser)
 
     def handle(self, *args, **options):
-        limit = 20
         super().handle(*args, **options)
         model_class = options['model_class']
-        self.stdout.write(self.style.MIGRATE_HEADING(f'Querying {model_class.__name__} ...'))
+
+        all_objects = model_class.objects.all()
+        limit = options.get('limit') or 20 if not options.get('all') else None
+
         objects = self.filter_queryset(
-            model_class.objects.all(),
+            all_objects,
             order_by=options.get('order_by'),
-            limit=options.get('limit'),
-            strict=options.get('strict')
+            limit=limit,
         )
-        total_count = objects.count()
-        brief_show = False
-        if total_count > limit and not options.get('all'):
-            brief_show = True
-            objects = objects[:limit]
 
         for obj in objects:
             if options.get('v'):
-                self.stdout.write(str(model_to_dict(obj)))
+                self.stdout.write(json.dumps(obj, cls=JsonEncoder))
             else:
                 self.stdout.write(f'{obj}')
 
         self.stdout.write('---------------------')
-        self.stdout.write(f'Count: {total_count}')
-        if brief_show:
+        self.stdout.write(f'Count: {objects.count()}')
+
+        if limit and all_objects.count() > limit:
+            # show briefly
             self.stdout.write(
                 self.style.WARNING(
                     f'\nNOTICE: Only first {limit} objects were listed. '
