@@ -28,8 +28,9 @@ class QuerySetCommand(BaseCommand):
         lte = 'lte'
 
         builtin_conditions = (
-            isin, range, exact, iexact, isnull,
-            contains, icontains, gt, gte, lt, lte
+            exact, iexact, isnull,
+            contains, icontains, gt, gte, lt, lte,
+            isin, range
         )
 
         exc = 'exclude__'
@@ -62,8 +63,10 @@ class QuerySetCommand(BaseCommand):
         if iterable:
             # 转为可迭代对象
             if is_list(value):
+                # '["a", "b", "c"]'
                 value = str2iter(value)
             else:
+                # 'a,b,c'
                 value = comma_separated_str2list(value)
 
         if isinstance(field, models.DateTimeField) or isinstance(refer_value, datetime.datetime):
@@ -96,6 +99,7 @@ class QuerySetCommand(BaseCommand):
         assert queryset
         instance = queryset[0]
         queries = dict()
+        builtin_conditions = self.FilterFormat.builtin_conditions
 
         for fnc, fv in kwargs.items():
             # makeup the field name and condition
@@ -104,7 +108,7 @@ class QuerySetCommand(BaseCommand):
                 # e.g. name, mobile_phone, user(FK)
                 fc = 'exact'
             else:
-                if fc not in self.FilterFormat.builtin_conditions:
+                if fc not in builtin_conditions:
                     # e.g. user__username, user__id
                     fns.append(fc)
                     fc = 'exact'
@@ -116,59 +120,51 @@ class QuerySetCommand(BaseCommand):
                 if not _meta:
                     _meta = instance._meta
 
-                _fns.reverse()
-                _fn = _fns[-1]
-                _fns.pop()
-
-                _field = _meta.get_field(_fn)
-
-                if hasattr(_field, '_meta'):
-                    return _get_last_field(_field._meta, _fns)
+                _fn = _fns.pop(0)
+                try:
+                    _field = _meta.get_field(_fn)
+                except FieldDoesNotExist as e:
+                    raise CommandError(e)
+                related_model = _field.related_model
+                if hasattr(related_model, '_meta'):
+                    return _get_last_field(related_model._meta, _fns)
 
                 return _field
-
-            last_field = _get_last_field()
-            fields = last_field.related_model._meta.concrete_fields
 
             ffn = '__'.join(fns)  # full field name
             fn = fns[-1]  # field name
             ff = self.FilterFormat(ffn)
 
-            for i, field in enumerate(fields):
-                if fn in (field.attname, field.name):
+            field = _get_last_field()
+
+            if fn in (field.attname, field.name):
+                hit_field = False
+                if fc == ff.range:
+                    fv = self._clean_query_value(fv, field, iterable=True)
+                    if len(fv) != 2:
+                        raise CommandError('Condition range requires exactly two values.')
                     hit_field = True
-                    if fc == ff.range:
-                        fv = self._clean_query_value(fv, field, iterable=True)
-                        if len(fv) != 2:
-                            raise CommandError('Condition range requires exactly two values.')
-                    elif fc == ff.isnull:
-                        try:
-                            fv = str2bool(fv)
-                        except (TypeError, ValueError):
-                            raise CommandError('Condition isnull accepts only bool type.')
-                    elif fc == ff.isin:
-                        fv = self._clean_query_value(fv, field, iterable=True)
-                    else:
-                        common_cond = (
-                            ff.exact, ff.iexact, ff.contains, ff.icontains,
-                            ff.gt, ff.gte, ff.lt, ff.lte)
-                        cond_hit = False
-                        for item in common_cond:
-                            if fc == item:
-                                fv = self._clean_query_value(fv, field)
-                                cond_hit = True
-                                break
-                        if not cond_hit:
-                            hit_field = False
-
-                        if hit_field:
+                elif fc == ff.isnull:
+                    try:
+                        fv = str2bool(fv)
+                    except (TypeError, ValueError):
+                        raise CommandError('Condition isnull accepts only bool type.')
+                    hit_field = True
+                elif fc == ff.isin:
+                    fv = self._clean_query_value(fv, field, iterable=True)
+                    hit_field = True
+                else:
+                    for item in builtin_conditions:
+                        if fc == item:
+                            fv = self._clean_query_value(fv, field)
+                            hit_field = True
                             break
-
-            queries[ff.setup(fc)] = fv
+                if hit_field:
+                    queries[ff.setup(fc)] = fv
 
         return queries
 
-    def filter_queryset(self, queryset, order_by: list = None, limit: int = None):
+    def filter_queryset(self, queryset, order_by: list = None, limit: int = None, strict=False):
         """
         Filter queryset by layer, then by filter parameters and
         order queryset if necessary
