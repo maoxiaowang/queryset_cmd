@@ -1,7 +1,7 @@
 import copy
 import datetime
 
-from django.core.exceptions import FieldError
+from django.core.exceptions import FieldError, FieldDoesNotExist
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
 
@@ -126,7 +126,7 @@ class QuerySetCommand(BaseCommand):
                 except FieldDoesNotExist as e:
                     raise CommandError(e)
                 related_model = _field.related_model
-                if hasattr(related_model, '_meta'):
+                if hasattr(related_model, '_meta') and _fns:
                     return _get_last_field(related_model._meta, _fns)
 
                 return _field
@@ -164,7 +164,7 @@ class QuerySetCommand(BaseCommand):
 
         return queries
 
-    def filter_queryset(self, queryset, order_by: list = None, limit: int = None, strict=False):
+    def filter_queryset(self, queryset, order_by: list = None, limit: int = None):
         """
         Filter queryset by layer, then by filter parameters and
         order queryset if necessary
