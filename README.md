@@ -163,10 +163,15 @@ Count: 2
 
 ```shell
 # List authors were created over a period of time.
-# Note that following commands are nearly same, separately using a datetime and date condition
+
 > python manage.py list myapp.Book --filter created_at__range=2022-05-01T00:00:00,2022-05-31T23:59:59
-> python namage.py list auth.User --filter last_login__range=2022-05-01,2022-06-01
 Book object (1)
 ---------------------
 Count: 1
 ```
+
+> Note that DateTimeField supports ISO standard datetime or date format, e.g. <br>
+>   2018-12-07T06:24:24.000000 <br>
+    2018-12-07T06:24:24Z<br>
+    2018-12-07 06:24:24<br>
+    2018-12-07<br>
