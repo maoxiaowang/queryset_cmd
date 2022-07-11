@@ -11,7 +11,7 @@
 
 ## Usage
 ```shell
-python manage.py list --help
+python manage.py query --help
 ```
 
 ## Examples
@@ -74,10 +74,10 @@ class Book(models.Model):
 | 4   |    3     |     3     |
 
 ### Commands
-- List all objects
+- query all objects
 ```shell
-# List all books by default ordering
-> python manage.py list myapp.Author
+# query all books by default ordering
+> python manage.py query myapp.Author
 Author object (1)
 Author object (2)
 Author object (3)
@@ -89,7 +89,7 @@ Count: 3
 > Use **--v** to see verbose output. <br>
 
 ```shell
-> python manage.py list myapp.Author --v
+> python manage.py query myapp.Author --v
 {"id": 1, "name": "R. F. Kuang", "age": 45}
 {"id": 2, "name": "Raymond E. Feist", "age": 36}
 {"id": 3, "name": "Tara McGowan-Ross", "age": 29}
@@ -97,9 +97,9 @@ Count: 3
 Count: 3
 ```
 
-- List objects by ordering
+- query objects by ordering
 ```shell
-> python manage.py list myapp.Author --order-by=-id
+> python manage.py query myapp.Author --order-by=-id
 Author object (3)
 Author object (2)
 Author object (1)
@@ -108,18 +108,18 @@ Count: 3
 ```
 > Use comma to separate ordering fields if there are more than one field.
 
-- List objects using filters
+- query objects using filters
 ```shell
 # Get author which ID is 1
-> python manage.py list myapp.Author --filter id=1 --v
+> python manage.py query myapp.Author --filter id=1 --v
 Author object (1)
 ---------------------
 Count: 1
 ```
 
 ```shell
-# List authors with specific IDs
-> python manage.py list myapp.Author --filter id__in=1,3
+# query authors with specific IDs
+> python manage.py query myapp.Author --filter id__in=1,3
 Author object (1)
 Author object (3)
 ---------------------
@@ -127,16 +127,16 @@ Count: 2
 ```
 
 ```shell
-# List books which name contains "The" and price is lower than 15
-> python manage.py list myapp.Book --filter name__contains=The,price__lt=15
+# query books which name contains "The" and price is lower than 15
+> python manage.py query myapp.Book --filter name__contains=The,price__lt=15
 Book object (1)
 ---------------------
 Count: 1
 ```
 
 ```shell
-# List books those published by a certain publisher
-> python manage.py list myapp.Book --filter publisher__name__contains=Harper
+# query books those published by a certain publisher
+> python manage.py query myapp.Book --filter publisher__name__contains=Harper
 Book object (1)
 Book object (2)
 ---------------------
@@ -144,8 +144,8 @@ Count: 2
 ```
 
 ```shell
-# List books those published by a certain publisher
-> python manage.py list myapp.Book --filter author__name="R. F. Kuang"
+# query books those published by a certain publisher
+> python manage.py query myapp.Book --filter author__name="R. F. Kuang"
 Book object (1)
 Book object (2)
 ---------------------
@@ -153,8 +153,8 @@ Count: 2
 ```
 
 ```shell
-# List publishers which website is null
-> python manage.py list myapp.Publisher --exclude website__isnull=True
+# query publishers which website is null
+> python manage.py query myapp.Publisher --exclude website__isnull=True
 Publisher object (1)
 Publisher object (2)
 ---------------------
@@ -162,9 +162,9 @@ Count: 2
 ```
 
 ```shell
-# List authors were created over a period of time.
+# query authors were created over a period of time.
 
-> python manage.py list myapp.Book --filter created_at__range=2022-05-01T00:00:00,2022-05-31T23:59:59
+> python manage.py query myapp.Book --filter created_at__range=2022-05-01T00:00:00,2022-05-31T23:59:59
 Book object (1)
 ---------------------
 Count: 1
@@ -175,3 +175,23 @@ Count: 1
     2018-12-07T06:24:24Z<br>
     2018-12-07 06:24:24<br>
     2018-12-07<br>
+
+### Use in program 
+- query with filters with Django restframework
+```python
+from queryset_cmd.management.utils.query import QuerySetFilter
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class SomeView:
+
+    def get_queryset(self):
+        query_params = dict()
+        for k, v in self.request.query_params.items():
+            if v:
+                query_params[k] = v
+        queryset = QuerySetFilter(strict=False).filter_queryset(User.objects.all(), **query_params)
+        return queryset
+
+```
