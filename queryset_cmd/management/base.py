@@ -1,199 +1,10 @@
-import copy
-import datetime
+from django.core.management.base import BaseCommand
 
-from django.core.exceptions import FieldError, FieldDoesNotExist
-from django.core.management.base import BaseCommand, CommandError
-from django.db import models
-
-from .utils.datetime import to_aware_datetime
-from .utils.text import (
-    comma_separated_str2list,
-    str2iter, is_list, str2bool, str2int, str2float,
-    query_str2dict
-)
+from queryset_cmd.management.utils.query import QuerySetFilter
+from queryset_cmd.management.utils.text import query_str2dict
 
 
-class QuerySetCommand(BaseCommand):
-    class FilterFormat(object):
-        isin = 'in'
-        range = 'range'
-        exact = 'exact'
-        iexact = 'iexact'
-        isnull = 'isnull'
-        contains = 'contains'
-        icontains = 'icontains'
-        gt = 'gt'
-        gte = 'gte'
-        lt = 'lt'
-        lte = 'lte'
-
-        builtin_conditions = (
-            exact, iexact, isnull,
-            contains, icontains, gt, gte, lt, lte,
-            isin, range
-        )
-
-        exc = 'exclude__'
-
-        def __init__(self, field_name):
-            self.field_name = field_name
-
-        def setup(self, fc):
-            """
-            Setup final condition clauses
-            """
-            return '__'.join([self.field_name, fc])
-
-        def exclude(self, cond):
-            return self.exc + cond
-
-    def __init__(self, stdout=None, stderr=None, no_color=False, force_color=False):
-        super().__init__(stdout, stderr, no_color, force_color)
-        self.filter_kwargs = dict()
-        self.exclude_kwargs = dict()
-
-    @staticmethod
-    def _clean_query_value(value, field=None, refer_value=None,
-                           iterable=False):
-        """
-        value_type is used for MongoDB data
-        """
-        if value == 'null':
-            return None
-        if iterable:
-            # 转为可迭代对象
-            if is_list(value):
-                # '["a", "b", "c"]'
-                value = str2iter(value)
-            else:
-                # 'a,b,c'
-                value = comma_separated_str2list(value)
-
-        if isinstance(field, models.DateTimeField) or isinstance(refer_value, datetime.datetime):
-            if iterable:
-                value = list(map(lambda x: to_aware_datetime(x), value))
-            else:
-                value = to_aware_datetime(value)
-        elif isinstance(field, models.BooleanField) or isinstance(refer_value, bool):
-            if iterable:
-                # bool filed not support iterable value
-                raise ValueError(value)
-            value = str2bool(value)
-        elif isinstance(field, models.IntegerField) or isinstance(refer_value, int):
-            if iterable:
-                value = list(map(lambda x: int(x), value))
-            else:
-                value = str2int(value)
-        elif isinstance(field, models.FloatField) or isinstance(refer_value, float):
-            if iterable:
-                value = list(map(lambda x: float(x), value))
-            else:
-                value = str2float(value)
-        else:
-            # str, bson ...
-            pass
-
-        return value
-
-    def _setup_query(self, queryset, kwargs: dict) -> dict:
-        assert queryset
-        instance = queryset[0]
-        queries = dict()
-        builtin_conditions = self.FilterFormat.builtin_conditions
-
-        for fnc, fv in kwargs.items():
-            # makeup the field name and condition
-            *fns, fc = fnc.split('__')
-            if not fc:
-                # e.g. name, mobile_phone, user(FK)
-                fc = 'exact'
-            else:
-                if fc not in builtin_conditions:
-                    # e.g. user__username, user__id
-                    fns.append(fc)
-                    fc = 'exact'
-
-            def _get_last_field(_meta=None, _fns=None):
-                # find last field according to field name list
-                if not _fns:
-                    _fns = copy.copy(fns)
-                if not _meta:
-                    _meta = instance._meta
-
-                _fn = _fns.pop(0)
-                try:
-                    _field = _meta.get_field(_fn)
-                except FieldDoesNotExist as e:
-                    raise CommandError(e)
-                related_model = _field.related_model
-                if hasattr(related_model, '_meta') and _fns:
-                    return _get_last_field(related_model._meta, _fns)
-
-                return _field
-
-            ffn = '__'.join(fns)  # full field name
-            fn = fns[-1]  # field name
-            ff = self.FilterFormat(ffn)
-
-            field = _get_last_field()
-
-            if fn in (field.attname, field.name):
-                hit_field = False
-                if fc == ff.range:
-                    fv = self._clean_query_value(fv, field, iterable=True)
-                    if len(fv) != 2:
-                        raise CommandError('Condition range requires exactly two values.')
-                    hit_field = True
-                elif fc == ff.isnull:
-                    try:
-                        fv = str2bool(fv)
-                    except (TypeError, ValueError):
-                        raise CommandError('Condition isnull accepts only bool type.')
-                    hit_field = True
-                elif fc == ff.isin:
-                    fv = self._clean_query_value(fv, field, iterable=True)
-                    hit_field = True
-                else:
-                    for item in builtin_conditions:
-                        if fc == item:
-                            fv = self._clean_query_value(fv, field)
-                            hit_field = True
-                            break
-                if hit_field:
-                    queries[ff.setup(fc)] = fv
-
-        return queries
-
-    def filter_queryset(self, queryset, order_by: list = None, limit: int = None):
-        """
-        Filter queryset by layer, then by filter parameters and
-        order queryset if necessary
-        """
-        # filtering except in case of passing parameter all=true
-        if queryset:
-            try:
-                queryset = queryset.exclude(
-                    **self._setup_query(queryset, self.exclude_kwargs)).filter(
-                    **self._setup_query(queryset, self.filter_kwargs))
-            except FieldError as e:
-                raise CommandError(e)
-
-            if order_by:
-                try:
-                    order_by = str2iter(order_by)
-                except TypeError:
-                    pass
-                if isinstance(order_by, str):
-                    order_by = (order_by,)
-
-                queryset = queryset.order_by(*order_by)
-
-            if limit:
-                assert isinstance(limit, int)
-                queryset = queryset[:limit]
-
-        return queryset
-
+class QuerySetCommand(QuerySetFilter, BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--order-by', type=str, default=None,
@@ -205,11 +16,11 @@ class QuerySetCommand(BaseCommand):
         )
         parser.add_argument(
             '--filter', type=query_str2dict, default=None,
-            help='Queryset filter queries. e.g. name__contains=Robert,birthday__range=1980-01-01,1980-12-31'
+            help='Queryset filter queries. see document for help.'
         )
         parser.add_argument(
             '--exclude', type=query_str2dict, default=None,
-            help='Queryset exclude queries, is similar to filter.'
+            help='Queryset exclude queries, similar to filter.'
         )
 
     def handle(self, *args, **options):

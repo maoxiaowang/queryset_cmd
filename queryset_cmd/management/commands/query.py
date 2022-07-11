@@ -1,10 +1,12 @@
 import json
 
 from django.apps import apps
+from django.core.management import CommandError
 from django.forms import model_to_dict
 
-from ..base import QuerySetCommand
-from ..utils.json import JsonEncoder
+from queryset_cmd.management.base import QuerySetCommand
+from queryset_cmd.management.utils.json import JsonEncoder
+from queryset_cmd.management.utils.query import QueryError
 
 
 class Command(QuerySetCommand):
@@ -19,6 +21,9 @@ class Command(QuerySetCommand):
             '--v', action='store_true', default=False
         )
         parser.add_argument(
+            '--vv', action='store_true', default=False
+        )
+        parser.add_argument(
             '--all', action='store_true', default=False
         )
         super().add_arguments(parser)
@@ -27,17 +32,25 @@ class Command(QuerySetCommand):
         super().handle(*args, **options)
         model_class = options['model_class']
 
-        all_objects = model_class.objects.all()
         limit = options.get('limit') or 20 if not options.get('all') else None
 
-        objects = self.filter_queryset(
-            all_objects,
-            order_by=options.get('order_by'),
-            limit=limit,
-        )
+        try:
+            objects = self.filter_queryset(
+                model_class.objects.all(),
+                order_by=options.get('order_by')
+            )
+        except QueryError as e:
+            raise CommandError(e)
+
+        object_count = objects.count()
+
+        if limit:
+            objects = objects[:limit]
 
         for obj in objects:
             if options.get('v'):
+                self.stdout.write(str(model_to_dict(obj)))
+            elif options.get('vv'):
                 self.stdout.write(json.dumps(obj, cls=JsonEncoder))
             else:
                 self.stdout.write(f'{obj}')
@@ -45,7 +58,7 @@ class Command(QuerySetCommand):
         self.stdout.write('---------------------')
         self.stdout.write(f'Count: {objects.count()}')
 
-        if limit and all_objects.count() > limit:
+        if limit and object_count > limit:
             # show briefly
             self.stdout.write(
                 self.style.WARNING(
