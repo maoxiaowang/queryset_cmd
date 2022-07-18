@@ -1,10 +1,12 @@
 from django.core.management.base import BaseCommand
 
-from queryset_cmd.management.utils.query import QuerySetFilter
-from queryset_cmd.management.utils.text import query_str2dict
+from queryset_cmd.backends import QuerySetFilter
+from queryset_cmd.utils.text import query_str2dict
 
 
-class QuerySetCommand(QuerySetFilter, BaseCommand):
+class QuerySetCommand(BaseCommand):
+    filter_backend = QuerySetFilter(strict=True)
+
     def add_arguments(self, parser):
         parser.add_argument(
             '--order-by', type=str, default=None,
@@ -25,6 +27,6 @@ class QuerySetCommand(QuerySetFilter, BaseCommand):
 
     def handle(self, *args, **options):
         if options.get('filter'):
-            self.filter_kwargs.update(**options['filter'])
+            self.filter_backend.filter_kwargs.update(**options['filter'])
         if options.get('exclude'):
-            self.exclude_kwargs.update(**options['exclude'])
+            self.filter_backend.exclude_kwargs.update(**options['exclude'])

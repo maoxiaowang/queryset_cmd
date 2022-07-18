@@ -5,11 +5,16 @@ import typing
 from django.core.exceptions import FieldError, FieldDoesNotExist
 from django.db import models
 
-from queryset_cmd.management.utils.datetime import to_aware_datetime
-from queryset_cmd.management.utils.text import (
+from utils.text import (
     comma_separated_str2list,
     str2iter, is_list, str2bool, str2int, str2float
 )
+from utils.datetime import to_aware_datetime
+
+__all__ = [
+    'QuerySetFilter',
+    'QueryError'
+]
 
 
 class QueryError(Exception):
@@ -17,13 +22,18 @@ class QueryError(Exception):
 
 
 class QuerySetFilter(object):
-    filter_kwargs = dict()
-    exclude_kwargs = dict()
-    strict = True
+    strict = False
+
+    def __new__(cls, *args, **kwargs):
+        cls.filter_kwargs = dict()
+        cls.exclude_kwargs = dict()
+        return super().__new__(cls)
 
     def __init__(self, *args, **kwargs):
         if 'strict' in kwargs and isinstance(kwargs['strict'], bool):
             self.strict = kwargs['strict']
+        self._view = None
+        self._request = None
         super().__init__()
 
     class FilterFormat:
@@ -182,8 +192,22 @@ class QuerySetFilter(object):
 
         return queries
 
-    def filter_queryset(self, queryset, order_by: typing.Union[tuple, list] = None, limit: int = None,
-                        filter_kwargs: dict = None, exclude_kwargs: dict = None, **kwargs):
+    @property
+    def query_params(self):
+        exclude_fields = getattr(self._view, 'exclude_fields', dict())
+        params = dict()
+        for k, v in self._request.query_params.items():
+            if v and k not in exclude_fields:
+                params[k] = v
+        return params
+
+    def filter_queryset(self, request, queryset, view):
+        self._view = view
+        self._request = request
+        return self.filter(queryset, **self.query_params)
+
+    def filter(self, queryset, order_by: typing.Union[tuple, list] = None, limit: int = None,
+               filter_kwargs: dict = None, exclude_kwargs: dict = None, **kwargs):
         """
         Filter queryset by layer, then by filter parameters and
         order queryset if necessary

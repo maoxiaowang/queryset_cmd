@@ -5,8 +5,8 @@ from django.core.management import CommandError
 from django.forms import model_to_dict
 
 from queryset_cmd.management.base import QuerySetCommand
-from queryset_cmd.management.utils.json import JsonEncoder
-from queryset_cmd.management.utils.query import QueryError
+from queryset_cmd.utils.json import JsonEncoder
+from queryset_cmd.utils.query import QueryError
 
 
 class Command(QuerySetCommand):

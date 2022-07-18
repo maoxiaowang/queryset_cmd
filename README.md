@@ -177,9 +177,9 @@ Count: 1
     2018-12-07<br>
 
 ### Use in program 
-- query with filters with Django restframework
+- Query by filters in Django
 ```python
-from queryset_cmd.management.utils.query import QuerySetFilter
+from queryset_cmd.backends import QuerySetFilter
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -187,11 +187,18 @@ User = get_user_model()
 class SomeView:
 
     def get_queryset(self):
-        query_params = dict()
-        for k, v in self.request.query_params.items():
-            if v:
-                query_params[k] = v
-        queryset = QuerySetFilter(strict=False).filter_queryset(User.objects.all(), **query_params)
+        queryset_filter = QuerySetFilter()
+        queryset = queryset_filter.filter(User.objects.all(), **queryset_filter.query_params)
         return queryset
 
+```
+- Query by filters in Django Rest Framework
+```python
+from queryset_cmd.backends import QuerySetFilter
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class SomeView:
+    filter_backends = [QuerySetFilter]
 ```
