@@ -4,12 +4,13 @@ import typing
 
 from django.core.exceptions import FieldError, FieldDoesNotExist
 from django.db import models
+from django.db.models.base import ModelBase
 
+from utils.datetime import to_aware_datetime
 from utils.text import (
     comma_separated_str2list,
     str2iter, is_list, str2bool, str2int, str2float
 )
-from utils.datetime import to_aware_datetime
 
 __all__ = [
     'QuerySetFilter',
@@ -29,7 +30,7 @@ class QuerySetFilter(object):
         cls.exclude_kwargs = dict()
         return super().__new__(cls)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         if 'strict' in kwargs and isinstance(kwargs['strict'], bool):
             self.strict = kwargs['strict']
         self._view = None
@@ -115,9 +116,7 @@ class QuerySetFilter(object):
 
         return value
 
-    def _setup_query(self, queryset, kwargs: dict) -> dict:
-        assert queryset
-        instance = queryset[0]
+    def _setup_query(self, meta, kwargs: dict) -> dict:
         queries = dict()
         builtin_conditions = self.FilterFormat.builtin_conditions
 
@@ -138,7 +137,7 @@ class QuerySetFilter(object):
                 if not _fns:
                     _fns = copy.copy(fns)
                 if not _meta:
-                    _meta = instance._meta
+                    _meta = meta
 
                 _fn = _fns.pop(0)
                 try:
@@ -150,7 +149,7 @@ class QuerySetFilter(object):
                         return
                 related_model = _field.related_model
                 if hasattr(related_model, '_meta') and _fns:
-                    return _get_last_field(related_model._meta, _fns)
+                    return _get_last_field(getattr(related_model, '_meta'), _fns)
 
                 return _field
 
@@ -226,26 +225,29 @@ class QuerySetFilter(object):
             else:
                 filter_kwargs.update({k: v})
 
-        if queryset:
+        meta = getattr(queryset, '_meta')
+        if isinstance(queryset, ModelBase):
+            queryset = meta.default_manager.all()
+
+        try:
+            queryset = queryset.exclude(
+                **self._setup_query(meta, exclude_kwargs)).filter(
+                **self._setup_query(meta, filter_kwargs))
+        except FieldError as e:
+            raise QueryError(e)
+
+        if order_by:
             try:
-                queryset = queryset.exclude(
-                    **self._setup_query(queryset, exclude_kwargs)).filter(
-                    **self._setup_query(queryset, filter_kwargs))
-            except FieldError as e:
-                raise QueryError(e)
+                order_by = str2iter(order_by)
+            except TypeError:
+                pass
+            if isinstance(order_by, str):
+                order_by = (order_by,)
 
-            if order_by:
-                try:
-                    order_by = str2iter(order_by)
-                except TypeError:
-                    pass
-                if isinstance(order_by, str):
-                    order_by = (order_by,)
+            queryset = queryset.order_by(*order_by)
 
-                queryset = queryset.order_by(*order_by)
-
-            if limit:
-                assert isinstance(limit, int)
-                queryset = queryset[:limit]
+        if limit:
+            assert isinstance(limit, int)
+            queryset = queryset[:limit]
 
         return queryset

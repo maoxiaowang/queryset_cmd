@@ -1,11 +1,8 @@
-import json
-
 from django.apps import apps
 from django.core.management import CommandError
 from django.forms import model_to_dict
 
 from queryset_cmd.management.base import QuerySetCommand
-from queryset_cmd.utils.json import JsonEncoder
 from queryset_cmd.utils.query import QueryError
 
 
@@ -21,9 +18,6 @@ class Command(QuerySetCommand):
             '--v', action='store_true', default=False
         )
         parser.add_argument(
-            '--vv', action='store_true', default=False
-        )
-        parser.add_argument(
             '--all', action='store_true', default=False
         )
         super().add_arguments(parser)
@@ -33,25 +27,22 @@ class Command(QuerySetCommand):
         model_class = options['model_class']
 
         limit = options.get('limit') or 20 if not options.get('all') else None
-
         try:
-            objects = self.filter_queryset(
-                model_class.objects.all(),
+            objects = self.filter_backend.filter(
+                model_class,
                 order_by=options.get('order_by')
             )
         except QueryError as e:
             raise CommandError(e)
 
-        object_count = objects.count()
-
         if limit:
             objects = objects[:limit]
+
+        object_count = objects.count()
 
         for obj in objects:
             if options.get('v'):
                 self.stdout.write(str(model_to_dict(obj)))
-            elif options.get('vv'):
-                self.stdout.write(json.dumps(obj, cls=JsonEncoder))
             else:
                 self.stdout.write(f'{obj}')
 
