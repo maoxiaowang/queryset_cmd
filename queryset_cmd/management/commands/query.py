@@ -26,7 +26,7 @@ class Command(QuerySetCommand):
         super().handle(*args, **options)
         model_class = options['model_class']
 
-        limit = options.get('limit') or 20 if not options.get('all') else None
+        limit = options.get('limit') or 10 if not options.get('all') else None
         try:
             objects = self.filter_backend.filter(
                 model_class,
@@ -54,5 +54,5 @@ class Command(QuerySetCommand):
             self.stdout.write(
                 self.style.WARNING(
                     f'\nNOTICE: Only first {limit} objects were listed. '
-                    '\n        Use --all to display all objects.')
+                    '\n        Use --all or --limit to display more.')
             )
