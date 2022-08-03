@@ -35,10 +35,10 @@ class Command(QuerySetCommand):
         except QueryError as e:
             raise CommandError(e)
 
+        object_count = objects.count()
+
         if limit:
             objects = objects[:limit]
-
-        object_count = objects.count()
 
         for obj in objects:
             if options.get('v'):
