@@ -225,9 +225,10 @@ class QuerySetFilter(object):
             else:
                 filter_kwargs.update({k: v})
 
-        meta = getattr(queryset, '_meta')
         if isinstance(queryset, ModelBase):
-            queryset = meta.default_manager.all()
+            queryset = getattr(queryset, '_meta').default_manager.all()
+
+        meta = getattr(queryset.model, '_meta')
 
         try:
             queryset = queryset.exclude(
